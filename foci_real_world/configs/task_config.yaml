@@ -1,0 +1,34 @@
+insert_tube:
+  objects: [mug, toothpaste_tube]
+  mesh_names: [mug, toothpaste_tube]
+  lan_grasp: 'grasp the toothpaste tube'
+  lan_manip: 'insert the toothpaste tube into the mug'
+  in_use: true
+
+sweep_dust:
+  objects: [dustpan, broom]
+  mesh_names: [dustpan, broom]
+  lan_grasp: 'pick up the broom'
+  lan_manip: 'sweep the dust with the broom'
+  in_use: true
+
+open_drawer:
+  objects: [drawer, drawer]
+  mesh_names: [drawer, drawer]
+  lan_grasp: 'grasp the drawer handle"'
+  lan_manip: 'open the drawer'
+  in_use: true
+
+scale_grape:
+  objects: [scale, grape]
+  mesh_names: [scale, grape]
+  lan_grasp: 'grasp the grape'
+  lan_manip: 'place the grape onto the scale'
+  in_use: true
+
+pour_liquid:
+  objects: [tea_cup, teapot]
+  mesh_names: [tea_cup, teapot]
+  lan_grasp: 'grasp the teapot'
+  lan_manip: 'pour the liquid from the teapot into the tea cup'
+  in_use: true

@@ -1,0 +1,149 @@
+# Task object configuration for preprocessing and online testing.
+#
+# Maps task_name -> {grasp: obj_name, target: obj_name, lan_grasp, lan_manip, mesh_names, [camera]}
+# Each entry specifies exactly ONE grasp object (pb / moving) and ONE target
+# object (pa / base) to use when preprocessing demos or running online tests.
+#
+# grasp / target may be a single string or a list of strings:
+#   - Masks: all listed objects are merged (union of their masks)
+#   - Poses: only the FIRST object in the list is used
+# lan_grasp / lan_manip: language instructions for the grasp and manipulation phases.
+# mesh_names: [moving_mesh, base_mesh] — mesh file names (without .obj) for Foundation Pose.
+# camera: optional camera override for this task (default: front).
+
+meat_off_grill:
+  grasp: [chicken, grill]       # variation 1 -> steak
+  target: grill
+  lan_grasp: 'pick up the chicken'
+  lan_manip: 'place the chicken off the grill'
+  mesh_names: [grill, grill]
+
+turn_tap:
+  grasp: [tap_main, tap_left]      # variation 1 -> tap_right
+  target: tap_main
+  lan_grasp: 'grasp the tap handle'
+  lan_manip: 'turn the tap handle to turn on the water'
+  mesh_names: [tap, tap]
+
+close_jar:
+  grasp: jar_lid0
+  target: jar0         # variation 1 -> jar1
+  lan_grasp: 'pick up the jar lid'
+  lan_manip: 'close the jar by placing the lid on the jar body'
+  mesh_names: [jar_lid0, jar0]
+
+reach_and_drag:
+  grasp: [stick, cube]
+  target: [stick, cube]
+  lan_grasp: 'pick up the object'
+  lan_manip: 'drag the object to the target location'
+  mesh_names: [stick_and_cube_and_target, stick_and_cube_and_target]
+
+stack_blocks:
+  grasp: stack_blocks_target0   # block being picked up (stage 0)
+  grasp_2: stack_blocks_target1  # block being picked up (stage 1)
+  target: stack_blocks_target_plane
+  target_2: stack_blocks_target_plane
+  lan_grasp: 'pick up the red block'
+  lan_manip: 'stack the red block on top of the green block'
+  mesh_names: [block_target, block_plane]
+
+light_bulb_in:
+  grasp: light_bulb0   # variation 1 -> light_bulb1
+  target: lamp_base
+  lan_grasp: 'pick up the light bulb'
+  lan_manip: 'insert the light bulb into the socket'
+  mesh_names: [light_bulb, lamp_base]
+
+put_money_in_safe:
+  grasp: dollar_stack
+  target: safe_body
+  lan_grasp: 'pick up the stack of money'
+  lan_manip: 'put the stack of money in the safe'
+  mesh_names: [dollar_stack, safe_body_with_door]
+
+place_wine_at_rack_location:
+  grasp: wine_bottle
+  target: rack_top
+  lan_grasp: 'pick up the wine by the rack'
+  lan_manip: 'place the wine on the rack'
+  mesh_names: [wine_bottle, rack_top]
+
+put_groceries_in_cupboard:
+  grasp: crackers      # variation 0; see GROCERY_NAMES for other variations
+  target: cupboard
+  lan_grasp: 'pick up the cracker'
+  lan_manip: 'put the cracker on the cupboard shelf'
+  mesh_names: [crackers, cupboard]
+
+place_shape_in_shape_sorter:
+  grasp: cube          # variation 0 (SHAPE_NAMES[0]); see SHAPE_NAMES for others
+  target: shape_sorter
+  lan_grasp: 'pick up the cube'
+  lan_manip: 'place the cube in the shape sorter'
+  mesh_names: [cube, shape_sorter]
+
+push_buttons:
+  grasp: push_buttons_target0  # virtual grasp: first target button
+  target: push_buttons_target0
+  lan_grasp: 'approach the button'
+  lan_manip: 'move downward and press the button'
+  mesh_names: [button, button]
+
+slide_block_to_color_target:
+  grasp: [block, target1]
+  target: target1
+  lan_grasp: 'pick up the block'
+  lan_manip: 'slide the block to the target location'
+  mesh_names: [target1, target1]
+
+insert_onto_square_peg:
+  grasp: square_ring
+  target: __AUTO__     # resolved from demo misc/online task (chosen pillar may vary)
+  lan_grasp: 'pick up the square ring'
+  lan_manip: 'insert the square ring onto the square peg'
+  mesh_names: [square_ring, square_base]
+
+stack_cups:
+  grasp: cup1          # variation 1 -> cup3
+  grasp_2: cup3
+  target: cup2         # variation 1 -> cup1
+  target_2: cup2
+  lan_grasp: 'pick up the cup'
+  lan_manip: 'stack the cup on top of the red cup'
+  mesh_names: [cup_other, cup_red]
+
+place_cups:
+  grasp: mug0
+  target: [place_cups_holder_base, mug3]
+  lan_grasp: 'pick up the mug'
+  lan_manip: 'place the mug on the mug holder'
+  mesh_names: [mug, holder]
+
+put_item_in_drawer:
+  grasp: item
+  target: drawer_frame
+  lan_grasp: 'pick up the item'
+  lan_manip: 'place the item in the drawer'
+  mesh_names: [item, drawer]
+
+sweep_to_dustpan_of_size:
+  grasp: [broom, broom_holder]
+  target: dustpan_tall  # variation 1 -> dustpan_short
+  lan_grasp: 'pick up the broom'
+  lan_manip: 'sweep debris into the dustpan'
+  mesh_names: [broom_and_holder, dustpan_tall]
+
+open_drawer:
+  grasp: drawer_frame  # drawer_bottom  # variation 1 -> drawer_middle, variation 2 -> drawer_top
+  target: drawer_frame
+  lan_grasp: 'grasp the drawer handle'
+  lan_manip: 'pull the drawer open'
+  mesh_names: [drawer, drawer]
+
+close_box:
+  grasp: [box_lid, box_base]
+  target: [box_lid, box_base]
+  lan_grasp: 'pick up the box lid'
+  lan_manip: 'close the box by placing the lid on the box base'
+  mesh_names: [box, box]

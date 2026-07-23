@@ -1,0 +1,348 @@
+diff --git a/rlbench/action_modes/action_mode.py b/rlbench/action_modes/action_mode.py
+index 1448051..68171a3 100644
+--- a/rlbench/action_modes/action_mode.py
++++ b/rlbench/action_modes/action_mode.py
+@@ -30,9 +30,8 @@ class MoveArmThenGripper(ActionMode):
+     def action(self, scene: Scene, action: np.ndarray):
+         arm_act_size = np.prod(self.arm_action_mode.action_shape(scene))
+         arm_action = np.array(action[:arm_act_size])
+-        ee_action = np.array(action[arm_act_size:arm_act_size+1])
+-        ignore_collisions = bool(action[arm_act_size+1:arm_act_size+2])
+-        self.arm_action_mode.action(scene, arm_action, ignore_collisions)
++        ee_action = np.array(action[arm_act_size:])
++        self.arm_action_mode.action(scene, arm_action)
+         self.gripper_action_mode.action(scene, ee_action)
+ 
+     def action_shape(self, scene: Scene):
+diff --git a/rlbench/action_modes/arm_action_modes.py b/rlbench/action_modes/arm_action_modes.py
+index 3dc42ef..2ac888d 100644
+--- a/rlbench/action_modes/arm_action_modes.py
++++ b/rlbench/action_modes/arm_action_modes.py
+@@ -187,7 +187,7 @@ class EndEffectorPoseViaPlanning(ArmActionMode):
+     def set_callable_each_step(self, callable_each_step):
+         self._callable_each_step = callable_each_step
+ 
+-    def action(self, scene: Scene, action: np.ndarray, ignore_collisions: bool = True):
++    def action(self, scene: Scene, action: np.ndarray):
+         assert_action_shape(action, (7,))
+         assert_unit_quaternion(action[3:])
+         if not self._absolute_mode and self._frame != 'end effector':
+@@ -196,7 +196,7 @@ class EndEffectorPoseViaPlanning(ArmActionMode):
+         self._quick_boundary_check(scene, action)
+ 
+         colliding_shapes = []
+-        if not ignore_collisions:
++        if self._collision_checking:
+             if self._robot_shapes is None:
+                 self._robot_shapes = scene.robot.arm.get_objects_in_tree(
+                     object_type=ObjectType.SHAPE)
+@@ -207,7 +207,7 @@ class EndEffectorPoseViaPlanning(ArmActionMode):
+                 grasped_objects = scene.robot.gripper.get_grasped_objects()
+                 colliding_shapes = [
+                     s for s in scene.pyrep.get_objects_in_tree(
+-                        object_type = ObjectType.SHAPE) if (
++                        object_type=ObjectType.SHAPE) if (
+                             s.is_collidable() and
+                             s not in self._robot_shapes and
+                             s not in grasped_objects and
+@@ -216,38 +216,20 @@ class EndEffectorPoseViaPlanning(ArmActionMode):
+                 [s.set_collidable(False) for s in colliding_shapes]
+ 
+         try:
+-            # try once with collision checking (if ignore_collisions is true)
+-            try:
+-                path = scene.robot.arm.get_path(
+-                    action[:3],
+-                    quaternion=action[3:],
+-                    ignore_collisions=ignore_collisions,
+-                    relative_to=relative_to,
+-                    trials=100,
+-                    max_configs=10,
+-                    max_time_ms=10,
+-                    trials_per_goal=5,
+-                    algorithm=Algos.RRTConnect
+-                )
+-            except ConfigurationPathError as e:
+-                if ignore_collisions:
+-                    raise InvalidActionError(
+-                        'A path could not be found. Most likely due to the target '
+-                        'being inaccessible or a collison was detected.') from e
+-                else:
+-                    # try once more with collision checking disabled
+-                    path = scene.robot.arm.get_path(
+-                        action[:3],
+-                        quaternion=action[3:],
+-                        ignore_collisions=True,
+-                        relative_to=relative_to,
+-                        trials=100,
+-                        max_configs=10,
+-                        max_time_ms=10,
+-                        trials_per_goal=5,
+-                        algorithm=Algos.RRTConnect
+-                    )
++            path = scene.robot.arm.get_path(
++                action[:3],
++                quaternion=action[3:],
++                ignore_collisions=not self._collision_checking,
++                relative_to=relative_to,
++                trials=100 * 2,
++                max_configs=10 * 2,
++                max_time_ms=10 * 2,
++                trials_per_goal=5 * 2,
++                algorithm=Algos.RRTConnect
++            )
++            [s.set_collidable(True) for s in colliding_shapes]
+         except ConfigurationPathError as e:
++            [s.set_collidable(True) for s in colliding_shapes]
+             raise InvalidActionError(
+                 'A path could not be found. Most likely due to the target '
+                 'being inaccessible or a collison was detected.') from e
+diff --git a/rlbench/backend/utils.py b/rlbench/backend/utils.py
+index 17a76f1..ac76e3c 100644
+--- a/rlbench/backend/utils.py
++++ b/rlbench/backend/utils.py
+@@ -37,6 +37,12 @@ PIL or standard image viewers.
+ 
+ import numpy as np
+ from PIL import Image
++from rlbench.backend.observation import Observation
++
++REMOVE_KEYS = ['joint_velocities', 'joint_positions', 'joint_forces',
++               'gripper_open', 'gripper_pose',
++               'gripper_joint_positions', 'gripper_touch_forces',
++               'task_low_dim_state', 'misc']
+ 
+ 
+ def ClipFloatValues(float_array, min_value, max_value):
+@@ -225,3 +231,69 @@ def rgb_handles_to_mask(rgb_coded_handles):
+   return (rgb_coded_handles[:, :, 0] +
+           rgb_coded_handles[:, :, 1] * 256 +
+           rgb_coded_handles[:, :, 2] * 256 * 256)
++
++
++def extract_obs(obs: Observation,
++                cameras,
++                t: int = 0,
++                prev_action=None,
++                channels_last: bool = False):
++    obs.joint_velocities = None
++    grip_mat = obs.gripper_matrix
++    grip_pose = obs.gripper_pose
++    joint_pos = obs.joint_positions
++    obs.gripper_pose = None
++    obs.gripper_matrix = None
++    obs.wrist_camera_matrix = None
++    obs.joint_positions = None
++    if obs.gripper_joint_positions is not None:
++      obs.gripper_joint_positions = np.clip(
++        obs.gripper_joint_positions, 0., 0.04)
++
++    obs_dict = vars(obs)
++
++    obs_dict = {k: v for k, v in obs_dict.items() if v is not None}
++    # for k, v in obs_dict.items():
++    #   print('raw data', k)
++    robot_state = np.array([
++      obs.gripper_open,
++      *obs.gripper_joint_positions])
++    # remove low-level proprioception variables that are not needed
++    obs_dict = {k: v for k, v in obs_dict.items()
++                if k not in REMOVE_KEYS}
++
++    if not channels_last:
++      # swap channels from last dim to 1st dim
++      obs_dict = {k: np.transpose(
++        v, [2, 0, 1]) if v.ndim == 3 else np.expand_dims(v, 0)
++                  for k, v in obs_dict.items()}
++    else:
++      # add extra dim to depth data
++      obs_dict = {k: v if v.ndim == 3 else np.expand_dims(v, -1)
++                  for k, v in obs_dict.items()}
++    obs_dict['low_dim_state'] = np.array(robot_state, dtype=np.float32)
++
++    # binary variable indicating if collisions are allowed or not while planning paths to reach poses
++    # obs_dict['ignore_collisions'] = np.array([obs.ignore_collisions], dtype=np.float32)
++    for (k, v) in [(k, v) for k, v in obs_dict.items() if 'point_cloud' in k]:
++      obs_dict[k] = v.astype(np.float32)
++
++    # for (k, v) in [(k, v) for k, v in obs_dict.items() if 'mask' in k]:
++    #   obs_dict[k] = v.astype(np.float32)
++
++
++    for camera_name in cameras:
++      obs_dict['%s_camera_extrinsics' % camera_name] = obs.misc['%s_camera_extrinsics' % camera_name]
++      obs_dict['%s_camera_intrinsics' % camera_name] = obs.misc['%s_camera_intrinsics' % camera_name]
++
++    # add timestep to low_dim_state
++    episode_length = 10  # TODO fix this
++    time = (1. - (t / float(episode_length - 1))) * 2. - 1.
++    obs_dict['low_dim_state'] = np.concatenate(
++      [obs_dict['low_dim_state'], [time]]).astype(np.float32)
++
++    obs.gripper_matrix = grip_mat
++    obs.joint_positions = joint_pos
++    obs.gripper_pose = grip_pose
++
++    return obs_dict
+diff --git a/rlbench/task_environment.py b/rlbench/task_environment.py
+index b72fa3e..e8ba2ed 100644
+--- a/rlbench/task_environment.py
++++ b/rlbench/task_environment.py
+@@ -91,12 +91,18 @@ class TaskEnvironment(object):
+     def get_observation(self) -> Observation:
+         return self._scene.get_observation()
+ 
+-    def step(self, action) -> (Observation, int, bool):
++    def step(self, action, test_mode=False) -> (Observation, int, bool):
+         # returns observation, reward, done, info
+         if not self._reset_called:
+             raise RuntimeError(
+                 "Call 'reset' before calling 'step' on a task.")
+-        self._action_mode.action(self._scene, action)
++        if test_mode:
++            try:
++                self._action_mode.action(self._scene, action)
++            except:
++                return None
++        else:
++            self._action_mode.action(self._scene, action)
+         success, terminate = self._task.success()
+         task_reward = self._task.reward()
+         reward = float(success) if task_reward is None else task_reward
+diff --git a/rlbench/tasks/insert_onto_square_peg.py b/rlbench/tasks/insert_onto_square_peg.py
+index e903d35..893f396 100644
+--- a/rlbench/tasks/insert_onto_square_peg.py
++++ b/rlbench/tasks/insert_onto_square_peg.py
+@@ -23,8 +23,11 @@ class InsertOntoSquarePeg(Task):
+ 
+     def init_episode(self, index: int) -> List[str]:
+         color_name, color_rgb = colors[index]
+-        spokes = [Shape('pillar0'), Shape('pillar1'), Shape('pillar2')]
+-        chosen_pillar = np.random.choice(spokes)
++        pillar_names = ['pillar0', 'pillar1', 'pillar2']
++        spokes = [Shape(name) for name in pillar_names]
++        chosen_idx = np.random.choice(len(spokes))
++        chosen_pillar = spokes[chosen_idx]
++        self._chosen_pillar_name = pillar_names[chosen_idx]
+         chosen_pillar.set_color(color_rgb)
+         _, _, z = self._success_centre.get_position()
+         x, y, _ = chosen_pillar.get_position()
+diff --git a/rlbench/utils.py b/rlbench/utils.py
+index f8bd378..edd5a22 100644
+--- a/rlbench/utils.py
++++ b/rlbench/utils.py
+@@ -343,3 +343,114 @@ def _resize_if_needed(image, size):
+     if image.size[0] != size[0] or image.size[1] != size[1]:
+         image = image.resize(size)
+     return image
++
++
++# constants
++EPISODE_FOLDER = 'episode%d'
++
++CAMERA_FRONT = 'front'
++CAMERA_LS = 'left_shoulder'
++CAMERA_RS = 'right_shoulder'
++CAMERA_WRIST = 'wrist'
++CAMERAS = [CAMERA_FRONT]
++
++IMAGE_RGB = 'rgb'
++IMAGE_DEPTH = 'depth'
++IMAGE_TYPES = [IMAGE_RGB, IMAGE_DEPTH]
++IMAGE_FORMAT = '%d.png'
++LOW_DIM_PICKLE = 'low_dim_obs.pkl'
++VARIATION_NUMBER_PICKLE = 'variation_number.pkl'
++
++DEPTH_SCALE = 2 ** 24 - 1
++
++import os
++# functions
++def get_stored_demo(data_path, index,init_matrix=False):
++    episode_path = os.path.join(data_path, EPISODE_FOLDER % index)
++
++    def _load_optional_mask(mask_path):
++        if os.path.exists(mask_path):
++            return np.array(Image.open(mask_path))
++        return None
++
++    # low dim pickle file
++    with open(os.path.join(episode_path, LOW_DIM_PICKLE), 'rb') as f:
++        obs = pickle.load(f)
++    # variation number
++    # with open(os.path.join(episode_path, VARIATION_NUMBER_PICKLE), 'rb') as f:
++    #     obs.variation_number = pickle.load(f)
++
++    num_steps = len(obs)
++    for i in range(num_steps):
++        obs[i].front_rgb = np.array(
++            Image.open(os.path.join(episode_path, '%s_%s' % (CAMERA_FRONT, IMAGE_RGB), IMAGE_FORMAT % i)))
++        obs[i].left_shoulder_rgb = np.array(
++            Image.open(os.path.join(episode_path, '%s_%s' % (CAMERA_LS, IMAGE_RGB), IMAGE_FORMAT % i)))
++        obs[i].right_shoulder_rgb = np.array(
++            Image.open(os.path.join(episode_path, '%s_%s' % (CAMERA_RS, IMAGE_RGB), IMAGE_FORMAT % i)))
++        obs[i].wrist_rgb = np.array(
++            Image.open(os.path.join(episode_path, '%s_%s' % (CAMERA_WRIST, IMAGE_RGB), IMAGE_FORMAT % i)))
++
++        obs[i].front_mask = _load_optional_mask(
++            os.path.join(episode_path, '%s_%s' % (CAMERA_FRONT, 'mask'), IMAGE_FORMAT % i)
++        )
++        obs[i].left_shoulder_mask = _load_optional_mask(
++            os.path.join(episode_path, '%s_%s' % (CAMERA_LS, 'mask'), IMAGE_FORMAT % i)
++        )
++        obs[i].right_shoulder_mask = _load_optional_mask(
++            os.path.join(episode_path, '%s_%s' % (CAMERA_RS, 'mask'), IMAGE_FORMAT % i)
++        )
++        obs[i].wrist_mask = _load_optional_mask(
++            os.path.join(episode_path, '%s_%s' % (CAMERA_WRIST, 'mask'), IMAGE_FORMAT % i)
++        )
++
++        obs[i].front_depth = image_to_float_array(
++            Image.open(os.path.join(episode_path, '%s_%s' % (CAMERA_FRONT, IMAGE_DEPTH), IMAGE_FORMAT % i)),
++            DEPTH_SCALE)
++        near = obs[i].misc['%s_camera_near' % (CAMERA_FRONT)]
++        far = obs[i].misc['%s_camera_far' % (CAMERA_FRONT)]
++        obs[i].front_depth = near + obs[i].front_depth * (far - near)
++
++        obs[i].left_shoulder_depth = image_to_float_array(
++            Image.open(os.path.join(episode_path, '%s_%s' % (CAMERA_LS, IMAGE_DEPTH), IMAGE_FORMAT % i)), DEPTH_SCALE)
++        near = obs[i].misc['%s_camera_near' % (CAMERA_LS)]
++        far = obs[i].misc['%s_camera_far' % (CAMERA_LS)]
++        obs[i].left_shoulder_depth = near + obs[i].left_shoulder_depth * (far - near)
++
++        obs[i].right_shoulder_depth = image_to_float_array(
++            Image.open(os.path.join(episode_path, '%s_%s' % (CAMERA_RS, IMAGE_DEPTH), IMAGE_FORMAT % i)), DEPTH_SCALE)
++        near = obs[i].misc['%s_camera_near' % (CAMERA_RS)]
++        far = obs[i].misc['%s_camera_far' % (CAMERA_RS)]
++        obs[i].right_shoulder_depth = near + obs[i].right_shoulder_depth * (far - near)
++
++        obs[i].wrist_depth = image_to_float_array(
++            Image.open(os.path.join(episode_path, '%s_%s' % (CAMERA_WRIST, IMAGE_DEPTH), IMAGE_FORMAT % i)),
++            DEPTH_SCALE)
++        near = obs[i].misc['%s_camera_near' % (CAMERA_WRIST)]
++        far = obs[i].misc['%s_camera_far' % (CAMERA_WRIST)]
++        obs[i].wrist_depth = near + obs[i].wrist_depth * (far - near)
++
++        obs[i].front_point_cloud = VisionSensor.pointcloud_from_depth_and_camera_params(obs[i].front_depth,
++                                                                                        obs[i].misc[
++                                                                                            'front_camera_extrinsics'],
++                                                                                        obs[i].misc[
++                                                                                            'front_camera_intrinsics'])
++        obs[i].left_shoulder_point_cloud = VisionSensor.pointcloud_from_depth_and_camera_params(
++            obs[i].left_shoulder_depth,
++            obs[i].misc['left_shoulder_camera_extrinsics'],
++            obs[i].misc['left_shoulder_camera_intrinsics'])
++        obs[i].right_shoulder_point_cloud = VisionSensor.pointcloud_from_depth_and_camera_params(
++            obs[i].right_shoulder_depth,
++            obs[i].misc['right_shoulder_camera_extrinsics'],
++            obs[i].misc['right_shoulder_camera_intrinsics'])
++        obs[i].wrist_point_cloud = VisionSensor.pointcloud_from_depth_and_camera_params(obs[i].wrist_depth,
++                                                                                        obs[i].misc[
++                                                                                            'wrist_camera_extrinsics'],
++                                                                                        obs[i].misc[
++                                                                                            'wrist_camera_intrinsics'])
++    if init_matrix:
++        base_matrix = obs.base_matrix
++        obj_matrix  = obs.obj_matrix
++        return obs, base_matrix, obj_matrix
++    else:
++        return obs

@@ -1,0 +1,32 @@
+# Dataloader configuration
+device: cuda:0           # evaluation device; e.g. cuda:1
+prediction_length: 3
+num_demos_grasp: 1      # candidate pool size for grasp mode
+num_demos_manip: 1      # candidate pool size for manip mode
+optimal: true           # if true, select best-ICP-aligned demo from the pool
+sampling_ratio: 0.6     # 1.0 for real-world
+max_demos_per_task: 50
+pen_factor: 0.6         # change-point detection penalty for interaction intervals
+task_list:
+  - close_jar
+  - meat_off_grill
+  - place_wine_at_rack_location
+  - put_money_in_safe
+  - turn_tap
+  - reach_and_drag
+  - light_bulb_in
+  - push_buttons
+  - slide_block_to_color_target
+  - place_cups
+  - sweep_to_dustpan_of_size
+  - open_drawer
+  - place_shape_in_shape_sorter
+  - insert_onto_square_peg
+  - put_groceries_in_cupboard
+  - put_item_in_drawer
+  - stack_blocks
+  - stack_cups
+  - close_box
+
+# Task list for Real-World (auto-detect from dataset directory if null)
+task_list_realworld: null

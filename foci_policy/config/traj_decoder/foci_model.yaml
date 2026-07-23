@@ -1,0 +1,66 @@
+# FOCI Model Configuration
+model:
+  pcd_dim: 128
+  pose_dim: 64
+  nhead: 4
+  num_decoder_layers: 2
+  dropout: 0.1
+  use_language: true
+  mode: "manip"
+  use_pcd_features: true
+  use_pose_features: false
+  
+  # GMM goal predictor
+  num_gaussians: 3
+  goal_hidden_dim: 256
+  
+  # Waypoint decoder
+  waypoint_nhead: 4
+  waypoint_num_layers: 2
+
+# Training
+training:
+  batch_size: 8
+  num_epochs: 150
+  learning_rate: 1.0e-4
+  weight_decay: 0.01
+  warmup_epochs: 5
+  grad_clip_norm: 1.0
+  
+  # Training phases (3-stage)
+  phase: "auto"  # 'auto', 'stage1', 'stage2', or 'stage3'
+  stage1_epochs: 50  # Stage 1: Encoder + GMM (freeze waypoint decoder)
+  stage2_epochs: 0  # Stage 2: Waypoint decoder with GT goal (freeze encoder + GMM)
+  stage3_epochs: 100  # Stage 3: Joint training with predicted goal (all params)
+  
+  # Scheduler
+  scheduler:
+    type: "cosine"
+    T_max: 150
+    eta_min: 1.0e-6
+
+  # Optimizer
+  optimizer:
+    type: "adamw"  # 'adamw' or 'adam'
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+
+# Loss weights
+loss:
+  lambda_nll: 1.0
+  lambda_waypoint_pos: 100.0
+  lambda_waypoint_rot: 500.0
+  lambda_stage1: 0.05  # Goal prediction weight in joint phase
+  lambda_stage2: 0.95  # Waypoint prediction weight in joint phase
+  gamma_geo: 0.1
+
+# Checkpoint
+checkpoint:
+  save_dir: "../checkpoints/foci"
+  save_interval: 50
+  keep_last_n: 2
+
+# Logging
+logging:
+  log_interval: 50
+  eval_interval: 5
